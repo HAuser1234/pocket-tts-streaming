@@ -555,7 +555,7 @@ class PocketTTSHandler(AsyncEventHandler):
                 quick_yield_single_sentence_fragment=CFG["s2s_quick_yield"],
                 minimum_sentence_length=CFG["s2s_min_sentence_len"],
                 minimum_first_fragment_length=CFG["s2s_min_first_frag"],
-                force_first_fragment_after_words=7, 
+                force_first_fragment_after_words=CFG["s2s_force_first_fragment_after_words"], 
                 cleanup_text_links=True, 
                 cleanup_text_emojis=True
             )
