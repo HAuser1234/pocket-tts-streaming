@@ -54,7 +54,8 @@ Once started, Home Assistant should automatically auto-discover the Wyoming inte
 You can tune the engine directly from the Add-on's "Configuration" tab:
 
 * **`hf_token`**: (Optional) Your Hugging Face API token, required *only* if you are dropping custom `.wav` files into the share folder for cloning.
-* **`voice`**: The default base voice to use (default: `alba`).
+* **`language`**: Select the Pocket TTS model language (`english`, `german`, `german_24l`, `french_24l`, `italian`, `italian_24l`, `spanish`, `spanish_24l`, `portuguese`, `portuguese_24l`, plus `english_2026-01`/`english_2026-04`).
+* **`voice`**: The default base voice to use (default: `alba`; for German use `juergen`).
 * **`enable_phonetic_dict`**: Toggles the custom pronunciation dictionary on or off.
 * **`pytorch_threads`**: (Default: 4) The number of CPU threads PyTorch is allowed to use. 
 * **`speaker_tail_padding`**: (Default: 0.3) Adds a fraction of a second of pure silence to the end of the audio stream.
@@ -63,8 +64,8 @@ You can tune the engine directly from the Add-on's "Configuration" tab:
 
 ## 🗣️ Voices & Instant Cloning
 
-The Add-on comes with 8 built-in voices natively loaded into RAM:
-`alba`, `marius`, `javert`, `jean`, `fantine`, `cosette`, `eponine`, and `azelma`.
+The Add-on now loads the full Pocket TTS built-in catalog (subject to selected model compatibility), including multilingual voices like:
+`juergen` (de), `estelle` (fr), `giovanni` (it), `lola` (es), and `rafael` (pt), plus the original English voices (`alba`, `marius`, `javert`, `jean`, `fantine`, `cosette`, `eponine`, `azelma`, and more).
 
 ### How to Clone a New Voice or Emotion (HF Token Required)
 You can expand your assistant's capabilities just by dropping audio files into your Home Assistant `/share` drive!

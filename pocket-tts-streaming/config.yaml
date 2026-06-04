@@ -8,6 +8,7 @@ arch:
   - amd64
 options:
   hf_token: ""
+  language: "english"
   voice: "alba"
   log_level: "info"
   s2s_quick_yield_single_sentence_fragment: true
@@ -18,6 +19,7 @@ options:
   speaker_tail_padding: 0.3
 schema:
   hf_token: password
+  language: list(english|english_2026-01|english_2026-04|french_24l|german|german_24l|portuguese|portuguese_24l|italian|italian_24l|spanish|spanish_24l)
   voice: str
   log_level: list(debug|info|warning|error)
   s2s_quick_yield_single_sentence_fragment: bool
