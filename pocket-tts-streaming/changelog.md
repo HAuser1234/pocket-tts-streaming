@@ -1,3 +1,6 @@
+## 1.0.6
+- Bugfix
+
 ## 1.0.5
 - Quick-Yield für einzelne Satzfragmente hinzugefügt
 - Parameter für minimale Satzlänge optimiert
