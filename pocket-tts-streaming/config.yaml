@@ -1,6 +1,6 @@
 name: "Pocket TTS Streaming"
 description: "Ultra-low latency streaming TTS using PocketTTS and the Wyoming protocol."
-version: "1.0.4"
+version: "1.0.5"
 slug: "pocket_tts_streaming"
 url: "https://github.com/HAuser1234/pocket-tts-streaming/tree/main/pocket-tts-streaming"
 init: false
@@ -30,7 +30,7 @@ schema:
   s2s_quick_yield_single_sentence_fragment: bool
   s2s_minimum_sentence_length: int
   s2s_minimum_first_fragment_length: int
-  s2s_force_first_fragment_after_words": int
+  s2s_force_first_fragment_after_words: int
   enable_phonetic_dict: bool
   pytorch_threads: int(1,)
   speaker_tail_padding: float(0,)
