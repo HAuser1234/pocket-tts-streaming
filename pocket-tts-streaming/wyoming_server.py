@@ -116,6 +116,18 @@ VOICE_LANGUAGE_MAP = {
     "vera": "en", "estelle": "fr", "juergen": "de", "rafael": "pt",
     "giovanni": "it", "lola": "es",
 }
+VOICE_NAME_PREFIX = "Pocket TTS: "
+
+def display_voice_name(name: str) -> str:
+    return f"{VOICE_NAME_PREFIX}{name}"
+
+def normalize_voice_name(name: str | None) -> str:
+    if not name:
+        return CFG["voice"]
+    clean_name = name.strip()
+    if clean_name.startswith(VOICE_NAME_PREFIX):
+        return clean_name[len(VOICE_NAME_PREFIX):].strip()
+    return clean_name
 
 def get_model_language_code(language: str) -> str:
     if language.startswith("english"):
@@ -296,7 +308,7 @@ class PocketTTSHandler(AsyncEventHandler):
         return True
 
     async def start_synthesis(self, voice_data, initial_text=None):
-        voice_name = getattr(voice_data, "name", CFG["voice"]) if voice_data else CFG["voice"]
+        voice_name = normalize_voice_name(getattr(voice_data, "name", CFG["voice"]) if voice_data else CFG["voice"])
         v_state = self.voice_states.get(voice_name, self.voice_states.get(CFG["voice"]))
         
         await self.write_event(AudioStart(rate=24000, width=2, channels=1).event())
@@ -354,7 +366,7 @@ class PocketTTSHandler(AsyncEventHandler):
 
     def _get_info(self):
         fallback_language = get_model_language_code(CFG["language"])
-        voices = [TtsVoice(name=n, languages=[VOICE_LANGUAGE_MAP.get(n, fallback_language)], installed=True, version="1.0",
+        voices = [TtsVoice(name=display_voice_name(n), languages=[VOICE_LANGUAGE_MAP.get(n, fallback_language)], installed=True, version="1.0",
                            attribution={"name": "Kyutai", "url": "https://kyutai.org"},
                            description=f"Pocket TTS: {n}") for n in self.voice_states]
         return Info(tts=[TtsProgram(name="Pocket TTS Streaming", installed=True, voices=voices, 
