@@ -155,6 +155,7 @@ def load_config():
         "s2s_quick_yield": True,
         "s2s_min_sentence_len": 15,
         "s2s_min_first_frag": 10,
+        "s2s_force_first_frag": 15;
         "enable_phonetic_dict": True,
         "dict_path": base_data / "pronunciations.json",
         "pytorch_threads": 4,
@@ -173,6 +174,8 @@ def load_config():
                 config["s2s_min_sentence_len"] = int(opts["s2s_minimum_sentence_length"])
             if "s2s_minimum_first_fragment_length" in opts: 
                 config["s2s_min_first_frag"] = int(opts["s2s_minimum_first_fragment_length"])
+            if "s2s_minimum_first_fragment_length" in opts: 
+                config["s2s_force_first_frag"] = int(opts["s2s_force_first_fragment_after_words"])
             if "enable_phonetic_dict" in opts:
                 config["enable_phonetic_dict"] = bool(opts["enable_phonetic_dict"])
             if "pytorch_threads" in opts:
@@ -555,7 +558,7 @@ class PocketTTSHandler(AsyncEventHandler):
                 quick_yield_single_sentence_fragment=CFG["s2s_quick_yield"],
                 minimum_sentence_length=CFG["s2s_min_sentence_len"],
                 minimum_first_fragment_length=CFG["s2s_min_first_frag"],
-                force_first_fragment_after_words=CFG["s2s_force_first_fragment_after_words"], 
+                force_first_fragment_after_words=CFG["s2s_force_first_frag"], 
                 cleanup_text_links=True, 
                 cleanup_text_emojis=True
             )
