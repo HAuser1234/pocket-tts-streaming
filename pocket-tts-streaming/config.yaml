@@ -29,6 +29,7 @@ schema:
   s2s_quick_yield_single_sentence_fragment: bool
   s2s_minimum_sentence_length: int
   s2s_minimum_first_fragment_length: int
+  s2s_force_first_fragment_after_words": int
   enable_phonetic_dict: bool
   pytorch_threads: int(1,)
   speaker_tail_padding: float(0,)
