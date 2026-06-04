@@ -12,7 +12,6 @@ from pathlib import Path
 from functools import partial
 
 import torch
-from pocket_tts import TTSModel, export_model_state
 from stream2sentence import generate_sentences
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers.polling import PollingObserver as Observer
@@ -22,6 +21,26 @@ from wyoming.server import AsyncEventHandler, AsyncServer
 from wyoming.tts import (Synthesize, SynthesizeStart, SynthesizeStop, 
                          SynthesizeChunk)
 from wyoming.event import Event
+
+# Configure persistent model caches before importing pocket_tts/huggingface internals.
+def configure_model_cache(models_dir: Path):
+    models_dir.mkdir(parents=True, exist_ok=True)
+    hf_home = models_dir / "huggingface"
+    hf_hub_cache = hf_home / "hub"
+    transformers_cache = hf_home / "transformers"
+    torch_cache = models_dir / "torch"
+    for cache_dir in (hf_home, hf_hub_cache, transformers_cache, torch_cache):
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+    os.environ["HF_HOME"] = str(hf_home)
+    os.environ["HF_HUB_CACHE"] = str(hf_hub_cache)
+    os.environ["TRANSFORMERS_CACHE"] = str(transformers_cache)
+    os.environ["TORCH_HOME"] = str(torch_cache)
+
+_DEFAULT_MODELS_DIR = Path(os.getenv("DATA_DIR", "/share/pocket_tts_streaming")) / "models"
+configure_model_cache(_DEFAULT_MODELS_DIR)
+
+from pocket_tts import TTSModel, export_model_state
 
 # Optimize for inference
 torch.set_grad_enabled(False)
@@ -114,12 +133,11 @@ def get_model_language_code(language: str) -> str:
     return "en"
 
 # Environment Setup
-os.environ["HF_HOME"] = str(CFG["models_dir"])
+configure_model_cache(CFG["models_dir"])
 if CFG["hf_token"]: 
     os.environ["HF_TOKEN"] = CFG["hf_token"]
 
 CFG["voices_dir"].mkdir(parents=True, exist_ok=True)
-CFG["models_dir"].mkdir(parents=True, exist_ok=True)
 
 # Apply the configured PyTorch threads (Ideal for your CPU-only setup)
 torch.set_num_threads(CFG["pytorch_threads"])
