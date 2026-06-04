@@ -29,11 +29,16 @@ def configure_model_cache(models_dir: Path):
     hf_hub_cache = hf_home / "hub"
     transformers_cache = hf_home / "transformers"
     torch_cache = models_dir / "torch"
-    for cache_dir in (hf_home, hf_hub_cache, transformers_cache, torch_cache):
+    xdg_cache_home = models_dir / "xdg_cache"
+    home_dir = models_dir / "home"
+    for cache_dir in (hf_home, hf_hub_cache, transformers_cache, torch_cache, xdg_cache_home, home_dir):
         cache_dir.mkdir(parents=True, exist_ok=True)
 
+    os.environ["HOME"] = str(home_dir)
+    os.environ["XDG_CACHE_HOME"] = str(xdg_cache_home)
     os.environ["HF_HOME"] = str(hf_home)
     os.environ["HF_HUB_CACHE"] = str(hf_hub_cache)
+    os.environ["HUGGINGFACE_HUB_CACHE"] = str(hf_hub_cache)
     os.environ["TRANSFORMERS_CACHE"] = str(transformers_cache)
     os.environ["TORCH_HOME"] = str(torch_cache)
 
@@ -144,6 +149,23 @@ def get_model_language_code(language: str) -> str:
         return "es"
     return "en"
 
+def get_custom_voice_name(path: Path) -> str | None:
+    if path.name.endswith(".wav.done"):
+        return path.name[:-9]
+    if path.suffix in {".wav", ".safetensors"}:
+        return path.stem
+    return None
+
+def discover_custom_voices(voices_dir: Path) -> set[str]:
+    voices = set()
+    for path in voices_dir.iterdir():
+        if not path.is_file():
+            continue
+        voice_name = get_custom_voice_name(path)
+        if voice_name:
+            voices.add(voice_name)
+    return voices
+
 # Environment Setup
 configure_model_cache(CFG["models_dir"])
 if CFG["hf_token"]: 
@@ -205,11 +227,19 @@ def normalize_wav(wav_path):
         _LOGGER.error(f"Failed to normalize {wav_path.name}: {e}")
 
 class VoiceFolderHandler(FileSystemEventHandler):
-    def __init__(self, model, voice_states, loop):
-        self.model, self.voice_states, self.loop = model, voice_states, loop
+    def __init__(self, model, voice_states, available_voices, voice_lock, loop):
+        self.model = model
+        self.voice_states = voice_states
+        self.available_voices = available_voices
+        self.voice_lock = voice_lock
+        self.loop = loop
 
     def _check_path(self, path_str):
         path = Path(path_str)
+        custom_voice = get_custom_voice_name(path)
+        if custom_voice:
+            with self.voice_lock:
+                self.available_voices.add(custom_voice)
         if path.suffix == ".wav" and not path.name.endswith(".done"):
             _LOGGER.info(f"New voice source detected: {path.name}")
             asyncio.run_coroutine_threadsafe(self._handle_new_wav(path), self.loop)
@@ -257,19 +287,62 @@ class VoiceFolderHandler(FileSystemEventHandler):
             _LOGGER.error(f"Failed to clone {path.name}: {e}", exc_info=(LOG_LEVEL == logging.DEBUG))
 
     def _load_voice(self, path):
-        if path.stem not in self.voice_states:
+        voice_name = path.stem
+        with self.voice_lock:
+            self.available_voices.add(voice_name)
+            if voice_name in self.voice_states:
+                return
+        if voice_name not in self.voice_states:
             try:
-                _LOGGER.info(f"Loading custom voice state: {path.stem}")
-                self.voice_states[path.stem] = self.model.get_state_for_audio_prompt(str(path))
+                _LOGGER.info(f"Loading custom voice state: {voice_name}")
+                state = self.model.get_state_for_audio_prompt(str(path))
+                with self.voice_lock:
+                    self.voice_states[voice_name] = state
             except Exception as e:
                 _LOGGER.error(f"Failed to load {path.name}: {e}")
 
 class PocketTTSHandler(AsyncEventHandler):
-    def __init__(self, model, voice_states, executor, *args, **kwargs):
+    def __init__(self, model, voice_states, available_voices, voice_lock, executor, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.model, self.voice_states, self.executor = model, voice_states, executor
+        self.model = model
+        self.voice_states = voice_states
+        self.available_voices = available_voices
+        self.voice_lock = voice_lock
+        self.executor = executor
         self.text_queue = asyncio.Queue()
         self.is_streaming = False
+
+    def _get_or_load_voice_state_sync(self, voice_name: str):
+        with self.voice_lock:
+            cached_state = self.voice_states.get(voice_name)
+        if cached_state is not None:
+            return cached_state
+
+        candidate_sources = []
+        if voice_name in VOICE_LANGUAGE_MAP:
+            candidate_sources.append(voice_name)
+
+        candidate_sources.extend([
+            str(CFG["voices_dir"] / f"{voice_name}.safetensors"),
+            str(CFG["voices_dir"] / f"{voice_name}.wav"),
+        ])
+
+        for source in candidate_sources:
+            source_path = Path(source)
+            if source in VOICE_LANGUAGE_MAP or source_path.exists():
+                try:
+                    loaded_state = self.model.get_state_for_audio_prompt(source)
+                    with self.voice_lock:
+                        self.voice_states[voice_name] = loaded_state
+                        self.available_voices.add(voice_name)
+                    return loaded_state
+                except Exception as e:
+                    _LOGGER.debug(f"Could not load voice '{voice_name}' from '{source}': {e}")
+        return None
+
+    async def _get_or_load_voice_state(self, voice_name: str):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(self.executor, self._get_or_load_voice_state_sync, voice_name)
 
     async def run(self) -> None:
         try:
@@ -309,7 +382,13 @@ class PocketTTSHandler(AsyncEventHandler):
 
     async def start_synthesis(self, voice_data, initial_text=None):
         voice_name = normalize_voice_name(getattr(voice_data, "name", CFG["voice"]) if voice_data else CFG["voice"])
-        v_state = self.voice_states.get(voice_name, self.voice_states.get(CFG["voice"]))
+        v_state = await self._get_or_load_voice_state(voice_name)
+        if v_state is None:
+            _LOGGER.warning(f"Requested voice '{voice_name}' is unavailable, falling back to '{CFG['voice']}'.")
+            v_state = await self._get_or_load_voice_state(CFG["voice"])
+        if v_state is None:
+            _LOGGER.error(f"Could not load fallback voice '{CFG['voice']}'.")
+            return
         
         await self.write_event(AudioStart(rate=24000, width=2, channels=1).event())
         
@@ -366,9 +445,11 @@ class PocketTTSHandler(AsyncEventHandler):
 
     def _get_info(self):
         fallback_language = get_model_language_code(CFG["language"])
+        with self.voice_lock:
+            voice_names = sorted(self.available_voices)
         voices = [TtsVoice(name=display_voice_name(n), languages=[VOICE_LANGUAGE_MAP.get(n, fallback_language)], installed=True, version="1.0",
                            attribution={"name": "Kyutai", "url": "https://kyutai.org"},
-                           description=f"Pocket TTS: {n}") for n in self.voice_states]
+                           description=f"Pocket TTS: {n}") for n in voice_names]
         return Info(tts=[TtsProgram(name="Pocket TTS Streaming", installed=True, voices=voices, 
                                     version="1.0.0", supports_synthesize_streaming=True,
                                     attribution={"name": "Kyutai", "url": "https://kyutai.org"},
@@ -465,6 +546,9 @@ async def main():
 
         # Load Initial Base Voices and Safetensors
         voice_states = {}
+        voice_lock = threading.Lock()
+        available_voices = set(VOICE_LANGUAGE_MAP.keys())
+        available_voices.update(discover_custom_voices(CFG["voices_dir"]))
         for voice_name in VOICE_LANGUAGE_MAP:
             try:
                 voice_states[voice_name] = model.get_state_for_audio_prompt(voice_name)
@@ -473,6 +557,7 @@ async def main():
 
         for p in CFG["voices_dir"].glob("*.safetensors"):
             voice_states[p.stem] = model.get_state_for_audio_prompt(str(p))
+            available_voices.add(p.stem)
 
         if not voice_states:
             raise RuntimeError("No voices could be loaded. Check model/language configuration.")
@@ -498,11 +583,11 @@ async def main():
         # Start threads and handlers
         executor, loop = ThreadPoolExecutor(max_workers=4), asyncio.get_running_loop()
         observer = Observer()
-        observer.schedule(VoiceFolderHandler(model, voice_states, loop), str(CFG["voices_dir"]))
+        observer.schedule(VoiceFolderHandler(model, voice_states, available_voices, voice_lock, loop), str(CFG["voices_dir"]))
         observer.start()
         
         server = AsyncServer.from_uri(f"tcp://0.0.0.0:{CFG['port']}")
-        await server.run(partial(PocketTTSHandler, model, voice_states, executor))
+        await server.run(partial(PocketTTSHandler, model, voice_states, available_voices, voice_lock, executor))
         
     finally:
         _LOGGER.warning("Service shutting down...")
