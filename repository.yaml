@@ -1,7 +1,3 @@
-{
-  "version":"v1.1",
-  "name": "Pocket TTS Streaming Multi Language",
-  "url": "https://github.com/HAuser1234/pocket-tts-streaming",
-  "maintainer": "HAuser1234",
-  "description": "Ultra-low latency, fully local TTS for Home Assistant using Kyutai's Pocket TTS. Features dynamic LLM emotion tagging and instant voice cloning via the Wyoming protocol.",
-}
+name: Pocket TTS Streaming Multi Language
+url: https://github.com/HAuser1234/pocket-tts-streaming
+maintainer: HAuser1234
