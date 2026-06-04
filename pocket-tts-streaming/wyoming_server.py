@@ -27,11 +27,15 @@ _DE_NUM_0_TO_19 = [
     "elf", "zwölf", "dreizehn", "vierzehn", "fünfzehn", "sechzehn", "siebzehn", "achtzehn", "neunzehn"
 ]
 _DE_TENS = ["", "", "zwanzig", "dreißig", "vierzig", "fünfzig", "sechzig", "siebzig", "achtzig", "neunzig"]
+_DE_MONTHS = [
+    "", "Januar", "Februar", "März", "April", "Mai", "Juni",
+    "Juli", "August", "September", "Oktober", "November", "Dezember"
+]
 
 def _german_num_to_words(n: int) -> str:
     """Konvertiert eine Zahl von 0 bis 99999 in deutsche Wörter."""
     if n < 0 or n > 99999:
-        return str(n)  # Fallback für Zahlen außerhalb des Bereichs
+        return str(n)
 
     if 0 <= n < 20:
         return _DE_NUM_0_TO_19[n]
@@ -57,47 +61,143 @@ def _german_num_to_words(n: int) -> str:
         thousands = n // 1000
         rest = n % 1000
         
-        # Spezialfall für "einundzwanzigtausend" etc.
         thousands_str = _german_num_to_words(thousands)
         if thousands_str == "eins":
             thousands_str = "ein"
         elif thousands_str.endswith("eins"):
-            thousands_str = thousands_str[:-4] + "ein"  # "eins" zu "ein" am Ende von Zahlen
+            thousands_str = thousands_str[:-4] + "ein"
             
         if rest == 0:
             return f"{thousands_str}tausend"
         
-        # Wenn der Rest unter 100 ist, klingt ein "und" oft natürlicher, ist aber optional.
-        # Hier wird es direkt angehängt (z.B. "tausendeins" oder "tausendeinhundert")
         return f"{thousands_str}tausend{_german_num_to_words(rest)}"
 
     return str(n)
 
-def normalize_german_text(text: str) -> str:
-    """Ersetzt Uhrzeiten und Zahlen (0-99999) durch deutsche Wörter."""
+def _german_ordinal_to_words(n: int, accusative_dative: bool = False) -> str:
+    """Konvertiert eine beliebige Zahl dynamisch in ein deutsches Ordinalwort."""
+    if n < 0:
+        return str(n)
+        
+    cardinal = _german_num_to_words(n)
+    rest_100 = n % 100
     
-    # 1. Uhrzeiten konvertieren (z.B. 08:02, 15:30)
+    if n == 0:
+        base_ordinal = "nullte"
+    elif rest_100 == 0 or rest_100 >= 20:
+        base_ordinal = cardinal + "ste"
+    else:
+        if cardinal.endswith("eins"):
+            base_ordinal = cardinal[:-4] + "erste"
+        elif cardinal.endswith("drei"):
+            base_ordinal = cardinal[:-4] + "dritte"
+        elif cardinal.endswith("sieben"):
+            base_ordinal = cardinal[:-6] + "siebte"
+        elif cardinal.endswith("acht"):
+            base_ordinal = cardinal[:-4] + "achte"
+        else:
+            base_ordinal = cardinal + "te"
+            
+    if accusative_dative:
+        return f"{base_ordinal}n"
+    return base_ordinal
+
+def normalize_german_text(text: str) -> str:
+    """Ersetzt Uhrzeiten, numerische Daten, Textdaten, Kommazahlen und Zahlen durch deutsche Wörter."""
+    
+    # 1. Uhrzeiten konvertieren (z.B. 15:30)
     time_pattern = re.compile(r'\b([0-1]?[0-9]|2[0-3]):([0-5][0-9])\b')
     
     def _time_replacer(match):
         hours = int(match.group(1))
         minutes = int(match.group(2))
-        
-        # Sonderfall für "ein Uhr" statt "eins Uhr"
         hours_str = "ein" if hours == 1 else _german_num_to_words(hours)
-        
         if minutes == 0:
             return f"{hours_str} Uhr"
-        
-        # Fehler behoben: Minuten werden jetzt direkt ohne führendes "null" übersetzt
-        minutes_str = _german_num_to_words(minutes)
-            
-        return f"{hours_str} Uhr {minutes_str}"
+        return f"{hours_str} Uhr {_german_num_to_words(minutes)}"
 
     text = time_pattern.sub(_time_replacer, text)
 
-    # 2. Eigenständige Zahlen von 0 bis 99999 konvertieren
-    # Matcht Zahlen mit 1 bis 5 Ziffern
+    # 2. Rein numerische Daten konvertieren (z.B. "04.06.2026")
+    numeric_date_pattern = re.compile(
+        r'\b(am|vom|den|der|des)?\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\b',
+        re.IGNORECASE
+    )
+
+    def _numeric_date_replacer(match):
+        preposition = match.group(1)
+        day = int(match.group(2))
+        month_idx = int(match.group(3))
+        year = int(match.group(4))
+        
+        if month_idx < 1 or month_idx > 12 or day < 1 or day > 31:
+            return match.group(0)
+            
+        month_name = _DE_MONTHS[month_idx]
+        use_dative_accusative = preposition is not None and preposition.lower() in ['am', 'vom', 'den', 'des']
+        
+        day_str = _german_ordinal_to_words(day, accusative_dative=use_dative_accusative)
+        year_str = _german_num_to_words(year)
+        
+        if preposition:
+            return f"{preposition} {day_str} {month_name} {year_str}"
+        return f"{day_str} {month_name} {year_str}"
+
+    text = numeric_date_pattern.sub(_numeric_date_replacer, text)
+
+    # 3. Daten mit ausgeschriebenen Monatsnamen konvertieren (z.B. "4. Juni")
+    date_pattern = re.compile(
+        r'\b(am|vom|den|der|des)?\s*(\d{1,2})\.\s+(Januar|Februar|März|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\b',
+        re.IGNORECASE
+    )
+
+    def _date_replacer(match):
+        preposition = match.group(1)
+        day = int(match.group(2))
+        month = match.group(3)
+        
+        use_dative_accusative = preposition is not None and preposition.lower() in ['am', 'vom', 'den', 'des']
+        day_str = _german_ordinal_to_words(day, accusative_dative=use_dative_accusative)
+        
+        if preposition:
+            return f"{preposition} {day_str} {month}"
+        return f"{day_str} {month}"
+
+    text = date_pattern.sub(_date_replacer, text)
+
+    # 4. Freistehende Ordnungszahlen mit Kontext (z.B. "der 104. Geburtstag")
+    ordinal_context_pattern = re.compile(
+        r'\b(am|vom|den|der|die|das|des)\s+(\d{1,5})\.\b',
+        re.IGNORECASE
+    )
+    
+    def _ordinal_context_replacer(match):
+        preposition = match.group(1)
+        num = int(match.group(2))
+        use_dative_accusative = preposition.lower() in ['am', 'vom', 'den', 'des']
+        
+        ordinal_str = _german_ordinal_to_words(num, accusative_dative=use_dative_accusative)
+        return f"{preposition} {ordinal_str}"
+
+    text = ordinal_context_pattern.sub(_ordinal_context_replacer, text)
+
+    # 5. NEU: Kommazahlen konvertieren (z.B. "4,6" oder "0,25")
+    # Matcht nur, wenn direkt vor und nach dem Komma Ziffern stehen (verhindert Match bei Auflistungen wie "1, 2, 3")
+    decimal_pattern = re.compile(r'\b(\d{1,5}),(\d{1,5})\b')
+    
+    def _decimal_replacer(match):
+        integer_part = int(match.group(1))
+        fractional_part_str = match.group(2)
+        
+        integer_str = _german_num_to_words(integer_part)
+        # Nachkommastellen Ziffer für Ziffer übersetzen
+        fractional_str = " ".join(_DE_NUM_0_TO_19[int(digit)] for digit in fractional_part_str)
+        
+        return f"{integer_str} Komma {fractional_str}"
+
+    text = decimal_pattern.sub(_decimal_replacer, text)
+
+    # 6. Eigenständige Kardinalzahlen von 0 bis 99999 konvertieren
     num_pattern = re.compile(r'\b\d{1,5}\b')
     
     def _num_replacer(match):
@@ -107,6 +207,7 @@ def normalize_german_text(text: str) -> str:
     text = num_pattern.sub(_num_replacer, text)
 
     return text
+
   
 # Configure persistent model caches before importing pocket_tts/huggingface internals.
 def configure_model_cache(models_dir: Path):
@@ -533,12 +634,21 @@ class PocketTTSHandler(AsyncEventHandler):
                 pass
 
     def _get_info(self):
-        fallback_language = get_model_language_code(CFG["language"])
+        # Ermittle den Sprach-Code für das aktuell geladene Modell (z.B. "de" oder "en")
+        active_language_code = get_model_language_code(CFG["language"])
+        
         with self.voice_lock:
             voice_names = sorted(self.available_voices)
-        voices = [TtsVoice(name=display_voice_name(n), languages=[VOICE_LANGUAGE_MAP.get(n, fallback_language)], installed=True, version="1.0",
+            
+        # Jede Stimme meldet nun, dass sie die aktuell aktive Sprache unterstützt.
+        # Dadurch zeigt der Wyoming-Client alle Stimmen in der Auswahlliste an.
+        voices = [TtsVoice(name=display_voice_name(n), 
+                           languages=[active_language_code], 
+                           installed=True, 
+                           version="1.0",
                            attribution={"name": "Kyutai", "url": "https://kyutai.org"},
                            description=f"Pocket TTS: {n}") for n in voice_names]
+                           
         return Info(tts=[TtsProgram(name="Pocket TTS Streaming", installed=True, voices=voices, 
                                     version="1.0.0", supports_synthesize_streaming=True,
                                     attribution={"name": "Kyutai", "url": "https://kyutai.org"},
