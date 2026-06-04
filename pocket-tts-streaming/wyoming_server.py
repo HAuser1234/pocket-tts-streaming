@@ -155,7 +155,7 @@ def load_config():
         "s2s_quick_yield": True,
         "s2s_min_sentence_len": 15,
         "s2s_min_first_frag": 10,
-        "s2s_force_first_frag": 15;
+        "s2s_force_first_frag": 15,
         "enable_phonetic_dict": True,
         "dict_path": base_data / "pronunciations.json",
         "pytorch_threads": 4,
