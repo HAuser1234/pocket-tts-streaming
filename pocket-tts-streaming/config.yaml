@@ -1,6 +1,6 @@
 name: "Pocket TTS Streaming"
 description: "Ultra-low latency streaming TTS using PocketTTS and the Wyoming protocol."
-version: "1.0.3"
+version: "1.0.4"
 slug: "pocket_tts_streaming"
 url: "https://github.com/HAuser1234/pocket-tts-streaming/tree/main/pocket-tts-streaming"
 init: false
