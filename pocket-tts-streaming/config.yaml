@@ -18,6 +18,7 @@ options:
   s2s_quick_yield_single_sentence_fragment: true
   s2s_minimum_sentence_length: 15
   s2s_minimum_first_fragment_length: 10
+  s2s_force_first_fragment_after_words: 15
   enable_phonetic_dict: true
   pytorch_threads: 4
   speaker_tail_padding: 0.3
