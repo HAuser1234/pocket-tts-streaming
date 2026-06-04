@@ -583,7 +583,10 @@ class PocketTTSHandler(AsyncEventHandler):
                 # Strip ALL tags from the text so they aren't spoken
                 clean_sentence = tag_pattern.sub('', sentence).strip()
                 if not clean_sentence: continue
-                if CFG["language"].startswith("german"):
+                _LOGGER.debug(f"DEBUG-CHECK: Sprach-Wert ist aktuell: '{CFG.get('language')}' (Typ: {type(CFG.get('language'))})")
+                
+                if CFG["language"] and CFG["language"].strip().lower().startswith("german"):
+                    _LOGGER.debug(f"Deutsches Modell aktiv. Starte Textnormalisierung...")
                     clean_sentence = normalize_german_text(clean_sentence)
                 # Apply Phonetic Override
                 if CFG["enable_phonetic_dict"] and PRONUNCIATION_DICT:
