@@ -33,6 +33,7 @@ def load_config():
     config = {
         "hf_token": os.getenv("HF_TOKEN", ""),
         "port": int(os.getenv("WYOMING_PORT", 10222)),
+        "language": os.getenv("MODEL_LANGUAGE", "english"),
         "voice": os.getenv("DEFAULT_VOICE", "alba"),
         "log_level": os.getenv("LOG_LEVEL", "info").upper(),
         "data_dir": base_data,
@@ -50,7 +51,7 @@ def load_config():
     if opts_path.exists():
         try:
             opts = json.loads(opts_path.read_text())
-            for k in ["hf_token", "port", "voice", "log_level"]:
+            for k in ["hf_token", "port", "language", "voice", "log_level"]:
                 if k in opts: config[k] = opts[k]
             
             if "s2s_quick_yield_single_sentence_fragment" in opts: 
@@ -78,6 +79,39 @@ LOG_LEVEL = getattr(logging, CFG["log_level"].upper(), logging.INFO)
 logging.basicConfig(level=LOG_LEVEL, format='%(levelname)s:%(name)s: %(message)s')
 _LOGGER = logging.getLogger("PocketTTSStreaming")
 _LOGGER.setLevel(LOG_LEVEL)
+
+SUPPORTED_POCKET_LANGUAGES = {
+    "english", "english_2026-01", "english_2026-04",
+    "french_24l", "german", "german_24l",
+    "portuguese", "portuguese_24l",
+    "italian", "italian_24l",
+    "spanish", "spanish_24l",
+}
+
+VOICE_LANGUAGE_MAP = {
+    "alba": "en", "anna": "en", "azelma": "en", "bill_boerst": "en",
+    "caro_davy": "en", "charles": "en", "cosette": "en", "eponine": "en",
+    "eve": "en", "fantine": "en", "george": "en", "jane": "en",
+    "jean": "en", "javert": "en", "marius": "en", "mary": "en",
+    "michael": "en", "paul": "en", "peter_yearsley": "en", "stuart_bell": "en",
+    "vera": "en", "estelle": "fr", "juergen": "de", "rafael": "pt",
+    "giovanni": "it", "lola": "es",
+}
+
+def get_model_language_code(language: str) -> str:
+    if language.startswith("english"):
+        return "en"
+    if language.startswith("french"):
+        return "fr"
+    if language.startswith("german"):
+        return "de"
+    if language.startswith("portuguese"):
+        return "pt"
+    if language.startswith("italian"):
+        return "it"
+    if language.startswith("spanish"):
+        return "es"
+    return "en"
 
 # Environment Setup
 os.environ["HF_HOME"] = str(CFG["models_dir"])
@@ -301,7 +335,8 @@ class PocketTTSHandler(AsyncEventHandler):
                 pass
 
     def _get_info(self):
-        voices = [TtsVoice(name=n, languages=["en"], installed=True, version="1.0",
+        fallback_language = get_model_language_code(CFG["language"])
+        voices = [TtsVoice(name=n, languages=[VOICE_LANGUAGE_MAP.get(n, fallback_language)], installed=True, version="1.0",
                            attribution={"name": "Kyutai", "url": "https://kyutai.org"},
                            description=f"Pocket TTS: {n}") for n in self.voice_states]
         return Info(tts=[TtsProgram(name="Pocket TTS Streaming", installed=True, voices=voices, 
@@ -379,7 +414,11 @@ async def main():
     
     try:
         _LOGGER.info("Loading Pocket TTS model weights...")
-        model = TTSModel.load_model()
+        if CFG["language"] not in SUPPORTED_POCKET_LANGUAGES:
+            _LOGGER.warning(f"Unsupported language '{CFG['language']}', falling back to english.")
+            CFG["language"] = "english"
+
+        model = TTSModel.load_model(language=CFG["language"])
         
         # Process pending .wav files on startup
         for wav_path in CFG["voices_dir"].glob("*.wav"):
@@ -395,14 +434,23 @@ async def main():
                     _LOGGER.error(f"Failed to process {wav_path.name} on startup: {e}")
 
         # Load Initial Base Voices and Safetensors
-        builtin_voices = [
-            "alba", "marius", "javert", "jean", 
-            "fantine", "cosette", "eponine", "azelma"
-        ]
-        voice_states = {v: model.get_state_for_audio_prompt(v) for v in builtin_voices}
-        
+        voice_states = {}
+        for voice_name in VOICE_LANGUAGE_MAP:
+            try:
+                voice_states[voice_name] = model.get_state_for_audio_prompt(voice_name)
+            except Exception as e:
+                _LOGGER.debug(f"Skipping unavailable built-in voice '{voice_name}': {e}")
+
         for p in CFG["voices_dir"].glob("*.safetensors"):
             voice_states[p.stem] = model.get_state_for_audio_prompt(str(p))
+
+        if not voice_states:
+            raise RuntimeError("No voices could be loaded. Check model/language configuration.")
+
+        if CFG["voice"] not in voice_states:
+            fallback_voice = next(iter(voice_states))
+            _LOGGER.warning(f"Configured default voice '{CFG['voice']}' not available. Falling back to '{fallback_voice}'.")
+            CFG["voice"] = fallback_voice
         
         # Group voices for clean logging
         all_names = set(voice_states.keys())
