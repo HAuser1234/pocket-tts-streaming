@@ -60,6 +60,8 @@ You can tune the engine directly from the Add-on's "Configuration" tab:
 * **`pytorch_threads`**: (Default: 4) The number of CPU threads PyTorch is allowed to use. 
 * **`speaker_tail_padding`**: (Default: 0.3) Adds a fraction of a second of pure silence to the end of the audio stream.
 
+Model downloads are cached persistently in `/share/pocket_tts_streaming/models`, so changing voices or restarting the container will reuse already-downloaded weights instead of fetching them again.
+
 ---
 
 ## 🗣️ Voices & Instant Cloning
