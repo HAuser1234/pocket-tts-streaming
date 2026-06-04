@@ -29,9 +29,13 @@ _DE_NUM_0_TO_19 = [
 _DE_TENS = ["", "", "zwanzig", "dreißig", "vierzig", "fünfzig", "sechzig", "siebzig", "achtzig", "neunzig"]
 
 def _german_num_to_words(n: int) -> str:
-    """Konvertiert eine Zahl von 0 bis 99 in deutsche Wörter."""
+    """Konvertiert eine Zahl von 0 bis 99999 in deutsche Wörter."""
+    if n < 0 or n > 99999:
+        return str(n)  # Fallback für Zahlen außerhalb des Bereichs
+
     if 0 <= n < 20:
         return _DE_NUM_0_TO_19[n]
+    
     if 20 <= n < 100:
         ones = n % 10
         tens = n // 10
@@ -40,13 +44,39 @@ def _german_num_to_words(n: int) -> str:
         if ones == 1:
             return f"einund{_DE_TENS[tens]}"
         return f"{_DE_NUM_0_TO_19[ones]}und{_DE_TENS[tens]}"
-    return str(n)  # Fallback für Zahlen über 99
+    
+    if 100 <= n < 1000:
+        hundreds = n // 100
+        rest = n % 100
+        hundreds_str = "ein" if hundreds == 1 else _DE_NUM_0_TO_19[hundreds]
+        if rest == 0:
+            return f"{hundreds_str}hundert"
+        return f"{hundreds_str}hundert{_german_num_to_words(rest)}"
+        
+    if 1000 <= n < 100000:
+        thousands = n // 1000
+        rest = n % 1000
+        
+        # Spezialfall für "einundzwanzigtausend" etc.
+        thousands_str = _german_num_to_words(thousands)
+        if thousands_str == "eins":
+            thousands_str = "ein"
+        elif thousands_str.endswith("eins"):
+            thousands_str = thousands_str[:-4] + "ein"  # "eins" zu "ein" am Ende von Zahlen
+            
+        if rest == 0:
+            return f"{thousands_str}tausend"
+        
+        # Wenn der Rest unter 100 ist, klingt ein "und" oft natürlicher, ist aber optional.
+        # Hier wird es direkt angehängt (z.B. "tausendeins" oder "tausendeinhundert")
+        return f"{thousands_str}tausend{_german_num_to_words(rest)}"
+
+    return str(n)
 
 def normalize_german_text(text: str) -> str:
-    """Ersetzt Uhrzeiten (z.B. 08:02, 14:15) und Zahlen (0-99) durch deutsche Wörter."""
+    """Ersetzt Uhrzeiten und Zahlen (0-99999) durch deutsche Wörter."""
     
     # 1. Uhrzeiten konvertieren (z.B. 08:02, 15:30)
-    # Matcht HH:MM (optional mit führender Null bei Stunden)
     time_pattern = re.compile(r'\b([0-1]?[0-9]|2[0-3]):([0-5][0-9])\b')
     
     def _time_replacer(match):
@@ -69,11 +99,17 @@ def normalize_german_text(text: str) -> str:
 
     text = time_pattern.sub(_time_replacer, text)
 
-    # 2. Eigenständige Zahlen von 0 bis 99 konvertieren
-    # Matcht nur reine Zahlen, die nicht Teil von Wörtern sind
-    num_pattern = re.compile(r'\b\d{1,2}\b')
+    # 2. Eigenständige Zahlen von 0 bis 99999 konvertieren
+    # Matcht Zahlen mit 1 bis 5 Ziffern
+    num_pattern = re.compile(r'\b\d{1,5}\b')
     
-    def _num_repla
+    def _num_replacer(match):
+        num = int(match.group(0))
+        return _german_num_to_words(num)
+
+    text = num_pattern.sub(_num_replacer, text)
+
+    return text
   
 # Configure persistent model caches before importing pocket_tts/huggingface internals.
 def configure_model_cache(models_dir: Path):
