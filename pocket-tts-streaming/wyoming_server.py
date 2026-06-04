@@ -89,11 +89,8 @@ def normalize_german_text(text: str) -> str:
         if minutes == 0:
             return f"{hours_str} Uhr"
         
-        # Sonderfall für Minuten: 01 bis 09 -> "null eins", "null zwei" etc.
-        if match.group(2).startswith("0") and minutes < 10:
-            minutes_str = f"null {_german_num_to_words(minutes)}"
-        else:
-            minutes_str = _german_num_to_words(minutes)
+        # Fehler behoben: Minuten werden jetzt direkt ohne führendes "null" übersetzt
+        minutes_str = _german_num_to_words(minutes)
             
         return f"{hours_str} Uhr {minutes_str}"
 
