@@ -22,6 +22,59 @@ from wyoming.tts import (Synthesize, SynthesizeStart, SynthesizeStop,
                          SynthesizeChunk)
 from wyoming.event import Event
 
+_DE_NUM_0_TO_19 = [
+    "null", "eins", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht", "neun", "zehn",
+    "elf", "zwölf", "dreizehn", "vierzehn", "fünfzehn", "sechzehn", "siebzehn", "achtzehn", "neunzehn"
+]
+_DE_TENS = ["", "", "zwanzig", "dreißig", "vierzig", "fünfzig", "sechzig", "siebzig", "achtzig", "neunzig"]
+
+def _german_num_to_words(n: int) -> str:
+    """Konvertiert eine Zahl von 0 bis 99 in deutsche Wörter."""
+    if 0 <= n < 20:
+        return _DE_NUM_0_TO_19[n]
+    if 20 <= n < 100:
+        ones = n % 10
+        tens = n // 10
+        if ones == 0:
+            return _DE_TENS[tens]
+        if ones == 1:
+            return f"einund{_DE_TENS[tens]}"
+        return f"{_DE_NUM_0_TO_19[ones]}und{_DE_TENS[tens]}"
+    return str(n)  # Fallback für Zahlen über 99
+
+def normalize_german_text(text: str) -> str:
+    """Ersetzt Uhrzeiten (z.B. 08:02, 14:15) und Zahlen (0-99) durch deutsche Wörter."""
+    
+    # 1. Uhrzeiten konvertieren (z.B. 08:02, 15:30)
+    # Matcht HH:MM (optional mit führender Null bei Stunden)
+    time_pattern = re.compile(r'\b([0-1]?[0-9]|2[0-3]):([0-5][0-9])\b')
+    
+    def _time_replacer(match):
+        hours = int(match.group(1))
+        minutes = int(match.group(2))
+        
+        # Sonderfall für "ein Uhr" statt "eins Uhr"
+        hours_str = "ein" if hours == 1 else _german_num_to_words(hours)
+        
+        if minutes == 0:
+            return f"{hours_str} Uhr"
+        
+        # Sonderfall für Minuten: 01 bis 09 -> "null eins", "null zwei" etc.
+        if match.group(2).startswith("0") and minutes < 10:
+            minutes_str = f"null {_german_num_to_words(minutes)}"
+        else:
+            minutes_str = _german_num_to_words(minutes)
+            
+        return f"{hours_str} Uhr {minutes_str}"
+
+    text = time_pattern.sub(_time_replacer, text)
+
+    # 2. Eigenständige Zahlen von 0 bis 99 konvertieren
+    # Matcht nur reine Zahlen, die nicht Teil von Wörtern sind
+    num_pattern = re.compile(r'\b\d{1,2}\b')
+    
+    def _num_repla
+  
 # Configure persistent model caches before importing pocket_tts/huggingface internals.
 def configure_model_cache(models_dir: Path):
     models_dir.mkdir(parents=True, exist_ok=True)
@@ -494,7 +547,8 @@ class PocketTTSHandler(AsyncEventHandler):
                 # Strip ALL tags from the text so they aren't spoken
                 clean_sentence = tag_pattern.sub('', sentence).strip()
                 if not clean_sentence: continue
-
+                if CFG["language"].startswith("german"):
+                    clean_sentence = normalize_german_text(clean_sentence)
                 # Apply Phonetic Override
                 if CFG["enable_phonetic_dict"] and PRONUNCIATION_DICT:
                     for target_word, phonetic_spelling in PRONUNCIATION_DICT.items():
